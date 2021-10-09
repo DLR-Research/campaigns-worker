@@ -1,0 +1,27 @@
+{
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "*": ["src/*"],
+            "test/*": ["test/*"]
+        },
+        "outDir": "./dist",
+        "target": "esnext",
+        "lib": ["esnext", "webworker"],
+        "module": "commonjs",
+        "alwaysStrict": true,
+        "strict": true,
+        "preserveConstEnums": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "types": [
+            "@cloudflare/workers-types"
+        ]
+    },
+    "include": ["src"],
+    "exclude": ["node_modules", "dist", "test"]
+}
