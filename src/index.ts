@@ -7,7 +7,7 @@ const router = Router()
 
 router.get('/', async () => {
   const client = new RDSDataClient(AWS_OPTS)
-  const call = sql(`SELECT * FROM next_fetch`)
+  const call = sql(`SELECT * FROM impact`)
   const results = await client.send(call)
   return new Response(JSON.stringify(results))
 })
