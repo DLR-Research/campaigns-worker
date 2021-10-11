@@ -24,7 +24,8 @@ CREATE TABLE public.campaigns (
     coinbase_endpoint character varying,
     coinbase_api_key character varying,
     graph_endpoint character varying,
-    graph_api_key character varying
+    graph_api_key character varying,
+    contribution_total numeric NOT NULL
 );
 
 
@@ -197,4 +198,5 @@ ALTER TABLE ONLY public.impact
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20211011065334');
+    ('20211011065334'),
+    ('20211011213008');

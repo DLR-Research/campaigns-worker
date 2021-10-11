@@ -29,6 +29,6 @@ CREATE TABLE impact (
 );
 
 -- migrate:down
+DROP TABLE impact;
 DROP TABLE users;
 DROP TABLE campaigns;
-DROP TABLE impact;
