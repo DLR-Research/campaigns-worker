@@ -16,8 +16,8 @@ const processStripeEvents = (campaignId, eventsList) => {
     const capturedDelta = prev == null ? cur.amount_captured : (prev.amount_captured == null ? 0 : cur.amount_captured - prev.amount_captured)
     const refundedDelta = prev == null ? cur.amount_refunded : (prev.amount_refunded == null ? 0 : cur.amount_refunded - prev.amount_refunded)
     const netDelta = capturedDelta - refundedDelta
-    const user = event.data.object.billing_details.email
-    console.log(`delta of ${netDelta} for ${user} in campaign ${campaignId}`)
+    const { name, email } = event.data.object.billing_details
+    console.log(`delta of ${netDelta} for ${name} (${email}) in campaign $ {campaignId}`)
   })
 }
 
@@ -48,6 +48,45 @@ const handleStripe = (campaignId, url, apiKey) => {
   req.end()
 }
 
+const processCoinbaseEvents = (campaignId, eventsList) => {
+  eventsList.forEach(({ type, data }) => {
+    if (type == 'charge:confirmed') {
+      let paidAmt = 0
+      data.payments.forEach(payment => {
+        paidAmt += Number(payment.net.local.amount)
+      })
+      const { name, email, custom: referrer } = data.metadata
+      console.log(`${name} (${email}) gave ${paidAmt} referred by ${referrer}`)
+    }
+  })
+}
+
+const handleCoinbase = (campaignId, url, apiKey) => {
+  const req = https.get(
+    url,
+    { headers: { 'X-CC-Api-Key': apiKey, 'X-CC-Version': '2018-03-22' } },
+    function(res) {
+      var body = []
+      res.on('data', function(chunk) {
+          body.push(chunk)
+      })
+      res.on('end', function() {
+          try {
+              body = JSON.parse(Buffer.concat(body).toString())
+              processCoinbaseEvents(campaignId, body.data)
+          } catch(e) {
+              console.log("error parsing coinbase resp")
+          }
+      })
+    }
+  )
+  req.on('error', (e) => {
+    console.log('Error in Coinbase Commerce API call');
+    console.log(e);
+  })
+  req.end()
+}
+
 
 const campaignsLoaded = (err, data) => {
   if (err) {
@@ -56,18 +95,13 @@ const campaignsLoaded = (err, data) => {
     const records = data.records
     records.forEach(record => {
       const campaignId = record[0].longValue
-      const STRIPE_URL = record[1].stringValue
-      const STRIPE_KEY = record[2].stringValue
-      const COINBASE_URL = record[3].stringValue
-      const COINBASE_KEY = record[4].stringValue
-      handleStripe(campaignId, STRIPE_URL, STRIPE_KEY)
-      console.log(campaignId)
-      console.log(STRIPE_URL)
-      console.log(STRIPE_KEY)
-      console.log(COINBASE_URL)
-      console.log(COINBASE_KEY)
+      const stripeUrl = record[1].stringValue
+      const stripeKey = record[2].stringValue
+      const coinbaseUrl = record[3].stringValue
+      const coinbaseKey = record[4].stringValue
+      handleStripe(campaignId, stripeUrl, stripeKey)
+      handleCoinbase(campaignId, coinbaseUrl, coinbaseKey)
     })
-    console.log(JSON.stringify(data,null,2))
   }
 }
 
@@ -86,3 +120,5 @@ exports.handler = (event, context, callback) => {
   
   rdsDataService.executeStatement(campaignQuery, campaignsLoaded)
 }
+
+
