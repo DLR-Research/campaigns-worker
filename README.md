@@ -47,3 +47,6 @@ AWS_AURORA_SECRET_ARN
 `wrangler dev`
 ### Deploy
 `wrangler publish`
+
+## Cron
+We use AWS Lambda for the cron job to keep impact stats updated. Copy `cron.js` into the in-browser Lambda code editor.
