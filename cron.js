@@ -34,6 +34,10 @@ const handleStripe = (campaignId, url, apiKey) => {
       res.on('end', function() {
           try {
               body = JSON.parse(Buffer.concat(body).toString())
+              if (body.data.length > 0) {
+                const nextUri = `https://api.stripe.com/v1/events?types%5B0%5D=charge.refunded&types%5B1%5D=charge.succeeded&limit=100&ending_before=${body.data[0].id}`
+                console.log(nextUri)
+              }
               processStripeEvents(campaignId, body.data)
           } catch(e) {
               console.log("error parsing stripe resp")
@@ -73,6 +77,8 @@ const handleCoinbase = (campaignId, url, apiKey) => {
       res.on('end', function() {
           try {
               body = JSON.parse(Buffer.concat(body).toString())
+              const nextUri = body.pagination.next_uri
+              console.log(nextUri)
               processCoinbaseEvents(campaignId, body.data)
           } catch(e) {
               console.log("error parsing coinbase resp")
