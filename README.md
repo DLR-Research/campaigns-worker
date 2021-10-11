@@ -1,3 +1,6 @@
+Please DM any security disclosures to @llllvvuu
+
+# Geting Started
 [Install Brew](https://brew.sh/)
 
 ## PostgreSQL
@@ -16,7 +19,7 @@ DATABASE_URL="postgres://username@127.0.0.1:5432/campaigns?sslmode=disable"
 ```
 ### Migrations
 ```
-dbmate --help`
+dbmate --help
 ```
 For prod:
 1. ssh into EC2 instance
@@ -26,7 +29,7 @@ For prod:
 ## Worker
 Prerequisite:
 ```
-yarn global add @cloudflare/wrangler`
+yarn global add @cloudflare/wrangler
 wrangler login
 ```
 ### Setup

@@ -5,6 +5,7 @@
   "author": "llllvvuu",
   "license": "MIT",
   "scripts": {
+    "format": "prettier --write 'src/**/*.{ts,tsx,js,css,json,md,html}'",
     "build": "webpack"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^2.2.2",
     "@types/node": "^16.10.3",
+    "prettier": "^2.4.1",
     "ts-loader": "^9.2.6",
     "ts-node": "^10.2.1",
     "tsconfig-paths-webpack-plugin": "^3.5.1",
