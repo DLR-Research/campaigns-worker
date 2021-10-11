@@ -157,19 +157,18 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: users users_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_name_key UNIQUE (name);
-
-
---
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: users_name_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX users_name_key ON public.users USING btree (name);
 
 
 --
@@ -199,4 +198,5 @@ ALTER TABLE ONLY public.impact
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20211011065334'),
-    ('20211011213008');
+    ('20211011213008'),
+    ('20211011223848');
