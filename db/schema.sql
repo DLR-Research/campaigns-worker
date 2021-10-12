@@ -9,6 +9,20 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -76,9 +90,9 @@ CREATE TABLE public.schema_migrations (
 
 CREATE TABLE public.users (
     user_id integer NOT NULL,
-    name character varying,
-    email character varying(320),
-    eth_address character(42)
+    name text,
+    email text,
+    eth_address text
 );
 
 
@@ -165,10 +179,38 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: impact_total_donated_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX impact_total_donated_idx ON public.impact USING btree (total_donated);
+
+
+--
+-- Name: users_email_trgm_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX users_email_trgm_idx ON public.users USING gin (email public.gin_trgm_ops);
+
+
+--
+-- Name: users_eth_trgm_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX users_eth_trgm_idx ON public.users USING gin (eth_address public.gin_trgm_ops);
+
+
+--
 -- Name: users_name_key; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX users_name_key ON public.users USING btree (name);
+
+
+--
+-- Name: users_name_trgm_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX users_name_trgm_idx ON public.users USING gin (name public.gin_trgm_ops);
 
 
 --
@@ -199,4 +241,5 @@ ALTER TABLE ONLY public.impact
 INSERT INTO public.schema_migrations (version) VALUES
     ('20211011065334'),
     ('20211011213008'),
-    ('20211011223848');
+    ('20211011223848'),
+    ('20211012031931');
