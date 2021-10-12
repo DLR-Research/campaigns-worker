@@ -8,10 +8,10 @@ interface GetStatsParams {
 export const getStats = async ({ params }: { params: GetStatsParams }) => {
   const { campaignId, userId } = params
   if (!Number.isInteger(Number(campaignId))) {
-    return new Response('Invalid campaign ID', { status: 403 })
+    return new Response(`Invalid campaign ID ${campaignId}`, { status: 400 })
   }
   if (!Number.isInteger(Number(userId))) {
-    return new Response('Invalid user ID', { status: 403 })
+    return new Response(`Invalid user ID ${userId}`, { status: 400 })
   }
 
   const statsCall = sql(`
@@ -50,15 +50,38 @@ export const getStats = async ({ params }: { params: GetStatsParams }) => {
 
 interface IndexStatsParams {
   campaignId: string
+  limit?: string
+  offset?: string
+}
+
+const parseNumberInRange = (description: string, str: string | null, min: number, max: number, defaultVal: number) => {
+  const parsed = Number(str)
+  const res = isNaN(parsed) || parsed == null ? defaultVal : parsed
+  if (res > max) {
+    throw(`${description} ${res} greater than max allowed (${max})`)
+  }
+  if (res < min) {
+    throw(`${description} ${res} less than min allowed (${min})`)
+  }
+  return res
 }
 
 export const indexStats = async ({ params, url }: { params: IndexStatsParams; url: string }) => {
-  const { campaignId } = params
-  if (!Number.isInteger(Number(campaignId))) {
-    return new Response('Invalid campaign ID', { status: 403 })
+  const campaignId = Number(params.campaignId)
+  if (!Number.isInteger(campaignId) || campaignId < 0) {
+    return new Response(`Invalid campaign ID ${campaignId}`, { status: 400 })
   }
+
   const { searchParams } = new URL(url)
   const filter = searchParams.get('filter')
+
+  let limit, offset
+  try {
+    limit = parseNumberInRange('Limit', searchParams.get('limit'), 1, 100, 10)
+    offset = parseNumberInRange('Offset', searchParams.get('offset'), 0, Infinity, 0)
+  } catch (e) {
+    return new Response(e as string, { status: 400 })
+  }
 
   const call = sql(`
     SELECT user_id, email, name, eth_address, total_donated, total_referred
@@ -73,6 +96,8 @@ export const indexStats = async ({ params, url }: { params: IndexStatsParams; ur
         )`
         : ''
     }
+    ORDER BY total_donated DESC
+    LIMIT ${limit} OFFSET ${offset}
   `)
   const { records } = await client.send(call)
 
