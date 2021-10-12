@@ -106,7 +106,7 @@ export const indexStats = async ({ params, url }: { params: IndexStatsParams; ur
 
   if (records) {
     const resp = records.map((record: any) => ({
-      user_id: Number(record[0].stringValue),
+      user_id: record[0].longValue,
       email: record[1].stringValue,
       name: record[2].stringValue,
       eth_address: record[3].stringValue,
