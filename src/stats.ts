@@ -1,4 +1,4 @@
-import { sql, client } from 'db'
+import { sql, client } from './db'
 
 interface GetStatsParams {
   campaignId: string
