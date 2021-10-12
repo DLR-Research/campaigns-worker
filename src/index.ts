@@ -1,16 +1,11 @@
 import { Router } from 'itty-router'
-import { RDSDataClient } from '@aws-sdk/client-rds-data'
 
-import { AWS_OPTS, sql } from 'db'
+import { getStats, indexStats } from 'stats'
 
 const router = Router()
 
-router.get('/', async () => {
-  const client = new RDSDataClient(AWS_OPTS)
-  const call = sql(`SELECT * FROM impact`)
-  const results = await client.send(call)
-  return new Response(JSON.stringify(results))
-})
+router.get('/campaigns/:campaignId/stats', indexStats)
+router.get('/campaigns/:campaignId/stats/:userId', getStats)
 
 router.all('*', () => new Response('404 Not Found', { status: 404 }))
 

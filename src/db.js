@@ -1,4 +1,4 @@
-import { ExecuteStatementCommand } from '@aws-sdk/client-rds-data'
+import { RDSDataClient, ExecuteStatementCommand } from '@aws-sdk/client-rds-data'
 
 export const AWS_OPTS = {
   region: AWS_REGION,
@@ -15,3 +15,5 @@ export const sql = query =>
     resourceArn: AWS_AURORA_RESOURCE_ARN,
     secretArn: AWS_AURORA_SECRET_ARN
   })
+
+export const client = new RDSDataClient(AWS_OPTS)

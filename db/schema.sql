@@ -179,6 +179,13 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: campaigns_campaign_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX campaigns_campaign_id_idx ON public.campaigns USING btree (campaign_id);
+
+
+--
 -- Name: impact_total_donated_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -242,4 +249,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20211011065334'),
     ('20211011213008'),
     ('20211011223848'),
-    ('20211012031931');
+    ('20211012031931'),
+    ('20211012070302');
