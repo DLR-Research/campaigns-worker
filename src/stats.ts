@@ -38,11 +38,14 @@ export const getStats = async ({ params }: { params: GetStatsParams }) => {
       total_donated: Number(stats[0].stringValue),
       total_referred: Number(stats[1].stringValue)
     }
-    return new Response(JSON.stringify(resp), {
+    const response = new Response(JSON.stringify(resp), {
       headers: {
         'content-type': 'application/json;charset=UTF-8'
       }
     })
+    response.headers.set("Access-Control-Allow-Origin", 'http://localhost:8080')
+    response.headers.append("Vary", "Origin")
+    return response
   } else {
     return new Response('Not Found', { status: 404 })
   }
@@ -110,11 +113,14 @@ export const indexStats = async ({ params, url }: { params: IndexStatsParams; ur
       total_donated: Number(record[4].stringValue),
       total_referred: Number(record[5].stringValue)
     }))
-    return new Response(JSON.stringify(resp), {
+    const response = new Response(JSON.stringify(resp), {
       headers: {
         'content-type': 'application/json;charset=UTF-8'
       }
     })
+    response.headers.set("Access-Control-Allow-Origin", 'http://localhost:8080')
+    response.headers.append("Vary", "Origin")
+    return response
   } else {
     return new Response('Error fetching from DB', { status: 500 })
   }
