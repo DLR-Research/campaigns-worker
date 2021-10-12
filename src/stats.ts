@@ -56,7 +56,7 @@ interface IndexStatsParams {
 
 const parseNumberInRange = (description: string, str: string | null, min: number, max: number, defaultVal: number) => {
   const parsed = Number(str)
-  const res = isNaN(parsed) || parsed == null ? defaultVal : parsed
+  const res = !str || isNaN(parsed) ? defaultVal : parsed
   if (res > max) {
     throw(`${description} ${res} greater than max allowed (${max})`)
   }
