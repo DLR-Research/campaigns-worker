@@ -32,6 +32,32 @@ const runSql = (theSql, transactionId) => {
   })
 }
 
+const upsertDonation = (subq, transactionId, campaignId, amount) =>
+  runSql(
+    `WITH this_user AS (${subq})
+      INSERT INTO impact (campaign_id, user_id, total_donated, total_referred)
+      SELECT ${campaignId}, user_id, ${amount}, 0 FROM this_user
+      ON CONFLICT(user_id, campaign_id) DO UPDATE SET total_donated = impact.total_donated + (${amount})`,
+    transactionId
+  )
+
+const upsertReferral = (subq, transactionId, campaignId, amount) =>
+  runSql(
+    `WITH this_user AS (${subq})
+      INSERT INTO impact (campaign_id, user_id, total_donated, total_referred)
+      SELECT ${campaignId}, user_id, 0, ${amount} FROM this_user
+      ON CONFLICT(user_id, campaign_id) DO UPDATE SET total_referred = impact.total_referred + (${amount})`,
+    transactionId
+  )
+
+const updateReferral = (userId, transactionId, campaignId, amount) =>
+  runSql(
+    `UPDATE impact
+  SET total_referred = total_referred + (${amount})
+  WHERE user_id = ${userId} AND campaign_id = ${campaignId}`,
+    transactionId
+  )
+
 function apiGet(apiUrl, headers) {
   return new Promise((resolve, reject) => {
     const req = https.get(apiUrl, { headers }, (res) => {
@@ -143,16 +169,13 @@ const processStripeEvents = /* async */ (
       const netDelta = capturedDelta - refundedDelta
       const { name, email } = event.data.object.billing_details
       promises.push(
-        runSql(
-          `WITH this_user AS (
-            INSERT INTO users (name, email) VALUES ('${name}', '${email}')
+        upsertDonation(
+          `INSERT INTO users (name, email) VALUES ('${name}', '${email}')
             ON CONFLICT(email) DO UPDATE SET name = '${name}'
-            RETURNING user_id
-          )
-          INSERT INTO impact (campaign_id, user_id, total_donated, total_referred)
-          SELECT ${campaignId}, user_id, ${netDelta}, 0 FROM this_user
-          ON CONFLICT(user_id, campaign_id) DO UPDATE SET total_donated = impact.total_donated + (${netDelta})`,
-          transactionId
+            RETURNING user_id`,
+          transactionId,
+          campaignId,
+          netDelta
         )
       )
     })
@@ -196,30 +219,101 @@ const handleStripe = async (campaignId, url, apiKey) => {
   }
 }
 
-const processCoinbaseEvents = (campaignId, eventsList) => {
-  eventsList.forEach(({ type, data }) => {
-    if (type == 'charge:confirmed') {
-      let paidAmt = 0
-      data.payments.forEach((payment) => {
-        paidAmt += Number(payment.net.local.amount)
-      })
-      const { name, email, custom: referrer } = data.metadata
-      console.log(`${name} (${email}) gave ${paidAmt} referred by ${referrer}`)
+const processCoinbaseEvents = /* async */ (
+  transactionId,
+  campaignId,
+  eventsList
+) => {
+  try {
+    const promises = []
+    eventsList.forEach(({ type, data }) => {
+      if (type == 'charge:confirmed') {
+        let paidAmt = 0
+        data.payments.forEach((payment) => {
+          paidAmt += Number(payment.net.local.amount)
+        })
+        paidAmt *= 100
+
+        const { name, email, custom } = data.metadata
+        let referrerEmail, referrerId
+        if (custom?.startsWith('id:')) {
+          referrerId = Number(custom.replace('id:', ''))
+        } else if (custom) {
+          referrerEmail = custom
+        }
+
+        promises.push(
+          upsertDonation(
+            `INSERT INTO users (name, email) VALUES ('${name}', '${email}')
+              ON CONFLICT(email) DO UPDATE SET name = '${name}'
+              RETURNING user_id`,
+            transactionId,
+            campaignId,
+            paidAmt
+          )
+        )
+        if (referrerEmail) {
+          promises.push(
+            upsertReferral(
+              `INSERT INTO users (email) VALUES ('${referrerEmail}')
+                ON CONFLICT(email) DO NOTHING
+                RETURNING user_id`,
+              transactionId,
+              campaignId,
+              paidAmt
+            )
+          )
+        }
+        if (referrerId) {
+          promises.push(
+            updateReferral(referrerId, transactionId, campaignId, paidAmt)
+          )
+        }
+      }
+    })
+    return Promise.all(promises)
+  } catch (e) {
+    console.log("Couldn't parse Coinbase Commerce charge object")
+    return Promise.reject(e)
+  }
+}
+
+const updateFromCoinbase = async (transactionId, campaignId, body, nextUri) => {
+  try {
+    const nextUri = body.pagination.next_uri
+    const promises = [
+      processCoinbaseEvents(transactionId, campaignId, body.data),
+    ]
+    if (nextUri) {
+      promises.push(
+        runSql(
+          `UPDATE campaigns SET coinbase_endpoint = '${nextUri}' WHERE campaign_id = ${campaignId}`,
+          transactionId
+        )
+      )
     }
-  })
+    await Promise.all(promises)
+    await commitTransaction(transactionId)
+  } catch (e) {
+    console.log("Couldn't update impact from Coinbase Commerce")
+    await rollbackTransaction(transactionId)
+    throw e
+  }
 }
 
 const handleCoinbase = async (campaignId, url, apiKey) => {
   try {
-    const body = await apiGet(url, {
-      'X-CC-Api-Key': apiKey,
-      'X-CC-Version': '2018-03-22',
-    })
-    const nextUri = body.pagination.next_uri
-    console.log(nextUri)
-    processCoinbaseEvents(campaignId, body.data)
+    const [body, { transactionId }] = await Promise.all([
+      apiGet(url, {
+        'X-CC-Api-Key': apiKey,
+        'X-CC-Version': '2018-03-22',
+      }),
+      beginTransaction(),
+    ])
+    await updateFromCoinbase(transactionId, campaignId, body)
   } catch (e) {
-    return Promise.reject(e)
+    console.log("Couldn't handle Coinbase Commerce")
+    throw e
   }
 }
 
