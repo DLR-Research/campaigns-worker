@@ -1,4 +1,4 @@
-import { sql, client } from './db'
+import { sql, db_client } from './db'
 
 interface GetStatsParams {
   campaignId: string
@@ -6,6 +6,7 @@ interface GetStatsParams {
 }
 
 export const getStats = async ({ params }: { params: GetStatsParams }) => {
+  const client = db_client()
   const { campaignId, userId } = params
   if (!Number.isInteger(Number(campaignId))) {
     return new Response(`Invalid campaign ID ${campaignId}`, { status: 400 })
@@ -70,6 +71,7 @@ const parseNumberInRange = (description: string, str: string | null, min: number
 }
 
 export const indexStats = async ({ params, url }: { params: IndexStatsParams; url: string }) => {
+  const client = db_client()
   const campaignId = Number(params.campaignId)
   if (!Number.isInteger(campaignId) || campaignId < 0) {
     return new Response(`Invalid campaign ID ${campaignId}`, { status: 400 })

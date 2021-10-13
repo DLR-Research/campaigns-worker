@@ -32,4 +32,4 @@ export const sql = (query: string) =>
     secretArn: AWS_AURORA_SECRET_ARN
   })
 
-export const client = new RDSDataClient(AWS_OPTS)
+export const db_client = () => new RDSDataClient(AWS_OPTS)
