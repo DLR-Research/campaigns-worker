@@ -39,7 +39,8 @@ CREATE TABLE public.campaigns (
     coinbase_api_key character varying,
     graph_endpoint character varying,
     graph_api_key character varying,
-    contribution_total numeric NOT NULL
+    contribution_total numeric NOT NULL,
+    created timestamp without time zone DEFAULT now()
 );
 
 
@@ -71,7 +72,8 @@ CREATE TABLE public.impact (
     campaign_id integer NOT NULL,
     user_id integer NOT NULL,
     total_donated numeric,
-    total_referred numeric
+    total_referred numeric,
+    created timestamp without time zone DEFAULT now()
 );
 
 
@@ -92,7 +94,8 @@ CREATE TABLE public.users (
     user_id integer NOT NULL,
     name text,
     email text,
-    eth_address text
+    eth_address text,
+    created timestamp without time zone DEFAULT now()
 );
 
 
@@ -250,4 +253,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20211011213008'),
     ('20211011223848'),
     ('20211012031931'),
-    ('20211012070302');
+    ('20211012070302'),
+    ('20211017060428');

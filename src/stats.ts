@@ -44,8 +44,8 @@ export const getStats = async ({ params }: { params: GetStatsParams }) => {
         'content-type': 'application/json;charset=UTF-8'
       }
     })
-    response.headers.set("Access-Control-Allow-Origin", 'http://localhost:8080')
-    response.headers.append("Vary", "Origin")
+    response.headers.set('Access-Control-Allow-Origin', 'http://localhost:8080')
+    response.headers.append('Vary', 'Origin')
     return response
   } else {
     return new Response('Not Found', { status: 404 })
@@ -62,10 +62,10 @@ const parseNumberInRange = (description: string, str: string | null, min: number
   const parsed = Number(str)
   const res = !str || isNaN(parsed) ? defaultVal : parsed
   if (res > max) {
-    throw(`${description} ${res} greater than max allowed (${max})`)
+    throw `${description} ${res} greater than max allowed (${max})`
   }
   if (res < min) {
-    throw(`${description} ${res} less than min allowed (${min})`)
+    throw `${description} ${res} less than min allowed (${min})`
   }
   return res
 }
@@ -120,8 +120,8 @@ export const indexStats = async ({ params, url }: { params: IndexStatsParams; ur
         'content-type': 'application/json;charset=UTF-8'
       }
     })
-    response.headers.set("Access-Control-Allow-Origin", 'http://localhost:8080')
-    response.headers.append("Vary", "Origin")
+    response.headers.set('Access-Control-Allow-Origin', 'http://localhost:8080')
+    response.headers.append('Vary', 'Origin')
     return response
   } else {
     return new Response('Error fetching from DB', { status: 500 })

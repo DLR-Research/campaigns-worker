@@ -2,6 +2,15 @@ const AWS = require('aws-sdk')
 const https = require('https')
 const rdsDataService = new AWS.RDSDataService()
 
+// require('dotenv').config()
+// const rdsDataService = new AWS.RDSDataService({
+//     region: process.env.AWS_REGION,
+//     credentials: {
+//       accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+//       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+//     }
+// })
+
 const COMMIT_PARAMS = {
   secretArn: process.env.SECRET_ARN,
   resourceArn: process.env.RDS_ARN,
@@ -18,6 +27,8 @@ const sql = (query, transactionId) => ({
   sql: query,
 })
 
+const NOOP = Promise.resolve(null)
+
 const runSql = (theSql, transactionId) => {
   return new Promise((resolve, reject) => {
     rdsDataService.executeStatement(sql(theSql, transactionId), (err, data) => {
@@ -32,14 +43,13 @@ const runSql = (theSql, transactionId) => {
   })
 }
 
-const upsertDonation = (subq, transactionId, campaignId, amount) =>
-  runSql(
-    `WITH this_user AS (${subq})
-      INSERT INTO impact (campaign_id, user_id, total_donated, total_referred)
-      SELECT ${campaignId}, user_id, ${amount}, 0 FROM this_user
-      ON CONFLICT(user_id, campaign_id) DO UPDATE SET total_donated = impact.total_donated + (${amount})`,
-    transactionId
-  )
+const upsertDonation = async (subq, transactionId, campaignId, amount) => runSql(
+  `WITH this_user AS (${subq})
+    INSERT INTO impact (campaign_id, user_id, total_donated, total_referred)
+    SELECT ${campaignId}, user_id, ${amount}, 0 FROM this_user
+    ON CONFLICT(user_id, campaign_id) DO UPDATE SET total_donated = impact.total_donated + (${amount})`,
+  transactionId
+)
 
 const upsertReferral = (subq, transactionId, campaignId, amount) =>
   runSql(
@@ -53,8 +63,8 @@ const upsertReferral = (subq, transactionId, campaignId, amount) =>
 const updateReferral = (userId, transactionId, campaignId, amount) =>
   runSql(
     `UPDATE impact
-  SET total_referred = total_referred + (${amount})
-  WHERE user_id = ${userId} AND campaign_id = ${campaignId}`,
+      SET total_referred = total_referred + (${amount})
+      WHERE user_id = ${userId} AND campaign_id = ${campaignId}`,
     transactionId
   )
 
@@ -144,13 +154,16 @@ const rollbackTransaction = (transactionId) => {
   })
 }
 
-const processStripeEvents = /* async */ (
+const processStripeEvents = async (
   transactionId,
   campaignId,
   eventsList
 ) => {
   try {
-    const promises = []
+    let totalDelta = 0
+    const emailToPromise = {}
+    const emailPromises = []
+    const NOOP = Promise.resolve(null)
     eventsList.reverse().forEach((event) => {
       const prev = event.data.previous_attributes
       const cur = event.data.object
@@ -167,37 +180,42 @@ const processStripeEvents = /* async */ (
           ? 0
           : cur.amount_refunded - prev.amount_refunded
       const netDelta = capturedDelta - refundedDelta
+      totalDelta += netDelta
       const { name, email } = event.data.object.billing_details
-      promises.push(
-        upsertDonation(
-          `INSERT INTO users (name, email) VALUES ('${name}', '${email}')
-            ON CONFLICT(email) DO UPDATE SET name = '${name}'
-            RETURNING user_id`,
-          transactionId,
-          campaignId,
-          netDelta
-        )
-      )
+      const donationPromise = (emailToPromise[email] || NOOP).then(() => upsertDonation(
+        `INSERT INTO users (name, email) VALUES ('${name}', '${email}')
+          ON CONFLICT(email) DO UPDATE SET name = '${name}'
+          RETURNING user_id`,
+        transactionId,
+        campaignId,
+        netDelta
+      ))
+      emailToPromise[email] = donationPromise
+      emailPromises.push(donationPromise)
     })
-    return Promise.all(promises)
+    await Promise.all(emailPromises)
+    return totalDelta
   } catch (e) {
     console.log("Couldn't parse Stripe charge object")
-    return Promise.reject(e)
+    throw(e)
   }
 }
 
 const updateFromStripe = async (transactionId, campaignId, data, nextUri) => {
   try {
     const nextUri = `https://api.stripe.com/v1/events?types%5B0%5D=charge.refunded&types%5B1%5D=charge.succeeded&limit=100&ending_before=${data[0].id}`
-    const promises = [
-      processStripeEvents(transactionId, campaignId, data),
-      runSql(
-        `UPDATE campaigns SET stripe_endpoint = '${nextUri}' WHERE campaign_id = ${campaignId}`,
-        transactionId
-      ),
-    ]
-    await Promise.all(promises)
-    await commitTransaction(transactionId)
+    const nextUriPromise = runSql(
+      `UPDATE campaigns SET stripe_endpoint = '${nextUri}' WHERE campaign_id = ${campaignId}`,
+      transactionId
+    )
+    const totalDelta = await processStripeEvents(transactionId, campaignId, data)
+    await nextUriPromise
+    await runSql(
+      `UPDATE campaigns
+      SET contribution_total = contribution_total + (${totalDelta})
+      WHERE campaign_id = ${campaignId}`,
+      transactionId
+    )
   } catch (e) {
     console.log("Couldn't update impact from Stripe")
     await rollbackTransaction(transactionId)
@@ -212,6 +230,7 @@ const handleStripe = async (campaignId, url, apiKey) => {
     if (data.length > 0) {
       const { transactionId } = await beginTransaction()
       await updateFromStripe(transactionId, campaignId, data)
+      await commitTransaction(transactionId)
     }
   } catch (e) {
     console.log("Couldn't handle Stripe")
@@ -219,20 +238,27 @@ const handleStripe = async (campaignId, url, apiKey) => {
   }
 }
 
-const processCoinbaseEvents = /* async */ (
+const processCoinbaseEvents = async (
   transactionId,
   campaignId,
   eventsList
 ) => {
   try {
-    const promises = []
-    eventsList.forEach(({ type, data }) => {
+    let totalDelta = 0
+    const emailPromises = []
+    const emailToPromise = {}
+    const idPromises = []
+    const idToPromise = {}
+    const idToAmount = {}
+    const NOOP = Promise.resolve(null)
+    eventsList.forEach(({ type, data}) => {
       if (type == 'charge:confirmed') {
         let paidAmt = 0
         data.payments.forEach((payment) => {
           paidAmt += Number(payment.net.local.amount)
         })
         paidAmt *= 100
+        totalDelta += paidAmt
 
         const { name, email, custom } = data.metadata
         let referrerEmail, referrerId
@@ -242,58 +268,65 @@ const processCoinbaseEvents = /* async */ (
           referrerEmail = custom
         }
 
-        promises.push(
-          upsertDonation(
-            `INSERT INTO users (name, email) VALUES ('${name}', '${email}')
-              ON CONFLICT(email) DO UPDATE SET name = '${name}'
+        const donationPromise = (emailToPromise[email] || NOOP).then(() => upsertDonation(
+          `INSERT INTO users (name, email) VALUES ('${name}', '${email}')
+            ON CONFLICT(email) DO UPDATE SET name = '${name}'
+            RETURNING user_id`,
+          transactionId,
+          campaignId,
+          paidAmt
+        ))
+        emailToPromise[email] = donationPromise
+        emailPromises.push(donationPromise)
+        if (referrerEmail) {
+          const referralPromise = (emailToPromise[email] || NOOP).then(() => upsertReferral(
+            `INSERT INTO users (email) VALUES ('${referrerEmail}')
+              ON CONFLICT(email) DO UPDATE SET name = users.name
               RETURNING user_id`,
             transactionId,
             campaignId,
             paidAmt
-          )
-        )
-        if (referrerEmail) {
-          promises.push(
-            upsertReferral(
-              `INSERT INTO users (email) VALUES ('${referrerEmail}')
-                ON CONFLICT(email) DO NOTHING
-                RETURNING user_id`,
-              transactionId,
-              campaignId,
-              paidAmt
-            )
-          )
+          ))
+          emailToPromise[email] = referralPromise
+          emailPromises.push(referralPromise)
         }
         if (referrerId) {
-          promises.push(
-            updateReferral(referrerId, transactionId, campaignId, paidAmt)
-          )
+          idToAmount[referrerId] = paidAmt
         }
       }
     })
-    return Promise.all(promises)
+    await Promise.all(emailPromises)
+    Object.entries(idToAmount).forEach(([id, amount]) => {
+      const referralPromise = (idToPromise[id] || NOOP).then(
+        () => updateReferral(referrerId, transactionId, campaignId, paidAmt)
+      )
+      idToPromise[id] = referralPromise
+      idPromises.push(referralPromise)
+    })
+    await Promise.all(idPromises)
+    return totalDelta
   } catch (e) {
     console.log("Couldn't parse Coinbase Commerce charge object")
-    return Promise.reject(e)
+    throw(e)
   }
 }
 
 const updateFromCoinbase = async (transactionId, campaignId, body, nextUri) => {
   try {
     const nextUri = body.pagination.next_uri
-    const promises = [
-      processCoinbaseEvents(transactionId, campaignId, body.data),
-    ]
-    if (nextUri) {
-      promises.push(
-        runSql(
-          `UPDATE campaigns SET coinbase_endpoint = '${nextUri}' WHERE campaign_id = ${campaignId}`,
-          transactionId
-        )
-      )
-    }
-    await Promise.all(promises)
-    await commitTransaction(transactionId)
+    const nextUriPromise = nextUri
+      ? runSql(
+        `UPDATE campaigns SET coinbase_endpoint = '${nextUri}' WHERE campaign_id = ${campaignId}`,
+        transactionId)
+      : NOOP
+    const totalDelta = await processCoinbaseEvents(transactionId, campaignId, body.data)
+    await nextUriPromise
+    await runSql(
+      `UPDATE campaigns
+      SET contribution_total = contribution_total + (${totalDelta})
+      WHERE campaign_id = ${campaignId}`,
+      transactionId
+    )
   } catch (e) {
     console.log("Couldn't update impact from Coinbase Commerce")
     await rollbackTransaction(transactionId)
@@ -303,14 +336,15 @@ const updateFromCoinbase = async (transactionId, campaignId, body, nextUri) => {
 
 const handleCoinbase = async (campaignId, url, apiKey) => {
   try {
-    const [body, { transactionId }] = await Promise.all([
-      apiGet(url, {
-        'X-CC-Api-Key': apiKey,
-        'X-CC-Version': '2018-03-22',
-      }),
-      beginTransaction(),
-    ])
-    await updateFromCoinbase(transactionId, campaignId, body)
+    const body = await apiGet(url, {
+      'X-CC-Api-Key': apiKey,
+      'X-CC-Version': '2018-03-22',
+    })
+    if (body.data.length > 0) {
+      const { transactionId } = await beginTransaction()
+      await updateFromCoinbase(transactionId, campaignId, body)
+      await commitTransaction(transactionId)
+    }
   } catch (e) {
     console.log("Couldn't handle Coinbase Commerce")
     throw e
@@ -329,15 +363,16 @@ exports.handler = async (event, context, callback) => {
   `)
 
   const promises = []
-  records.forEach((record) => {
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i]
     const campaignId = record[0].longValue
     const stripeUrl = record[1].stringValue
     const stripeKey = record[2].stringValue
     const coinbaseUrl = record[3].stringValue
     const coinbaseKey = record[4].stringValue
-    promises.push(handleStripe(campaignId, stripeUrl, stripeKey))
-    promises.push(handleCoinbase(campaignId, coinbaseUrl, coinbaseKey))
-  })
-  await Promise.all(promises)
+    await handleStripe(campaignId, stripeUrl, stripeKey)
+    await handleCoinbase(campaignId, coinbaseUrl, coinbaseKey)
+  }
 }
 
+// exports.handler()
